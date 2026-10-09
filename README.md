@@ -4,6 +4,10 @@
 
 Harbor is a Windows desktop IRC client built with Electron. It brings channels, conversations, and member lists into a clean interface—and keeps the connection secure with verified TLS.
 
+## About
+
+Harbor IRC is a secure-by-default Windows IRC client with TLS, SASL and NickServ authentication, custom themes, member status groups, CTCP tools, and configurable message scripts. The installer is available from the [GitHub Releases](https://github.com/Ackleine/harbor-irccleint/releases) page.
+
 ## ✨ What’s on board
 
 - **Secure connections** — TLS is required, with certificate verification enabled.
@@ -47,6 +51,16 @@ npm.cmd run package
 ```
 
 The Windows installer will be created under `dist\`.
+
+## 📥 Download and install the Windows app
+
+1. Open the [latest Harbor IRC release](https://github.com/Ackleine/harbor-irccleint/releases/latest).
+2. Under **Assets**, download `Harbor IRC Setup 1.0.0.exe` (or the installer attached to the newest release).
+3. Open the downloaded `.exe` and follow the installer prompts. Windows may ask you to confirm running an app that is not signed by a trusted publisher.
+4. Launch **Harbor IRC** from the Start menu.
+5. Open **Settings → Connection**, enter your IRC server, TLS port, nickname, and any channels or authentication details, then choose **Connect securely**.
+
+The `.exe` is an installer, not a portable app: run it once to install Harbor, then launch Harbor from the Start menu. Your connection settings are kept on your device.
 
 ## ⌨️ Handy commands
 
