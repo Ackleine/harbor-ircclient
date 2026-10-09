@@ -1,0 +1,38 @@
+{
+  "name": "harbor-irc",
+  "version": "1.0.0",
+  "description": "A secure-by-default desktop IRC client",
+  "private": true,
+  "type": "module",
+  "main": "main.cjs",
+  "scripts": {
+    "dev": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on tcp:127.0.0.1:5173 && electron .\"",
+    "build": "vite build",
+    "start": "electron .",
+    "package": "npm run build && electron-builder"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "electron": "^41.0.0",
+    "electron-builder": "^26.0.12",
+    "vite": "^7.0.0",
+    "wait-on": "^8.0.3"
+  },
+  "build": {
+    "appId": "app.harbor.irc",
+    "productName": "Harbor IRC",
+    "files": [
+      "dist/**",
+      "main.cjs",
+      "preload.cjs",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis"
+    }
+  },
+  "allowScripts": {
+    "electron@41.10.7": true,
+    "esbuild@0.28.2": true
+  }
+}
