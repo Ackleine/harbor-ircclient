@@ -16,7 +16,11 @@ Harbor IRC is a secure-by-default Windows IRC client with TLS, SASL and NickServ
 - **Custom quit message** — Configure the message sent by `/quit`, `/disconnect`, or the Disconnect button. `{nick}` is replaced with your current nickname.
 - **The essentials** — Connect to a server, join channels, chat, see members and topics, and use familiar IRC commands.
 - **CTCP support** — Replies to CTCP PING and identifies as **“Harbor IRC - the best client out there”** for CTCP VERSION. The Connection log shows incoming requests, replies, and server notices.
+- **Clear conversation types** — Channels and direct messages have separate sidebar sections and distinct styling. Use `/msg NickServ ...` to chat with NickServ; its private replies appear in that direct-message conversation.
+- **Message highlights** — Messages that mention your nickname are highlighted. IRC foreground and background color codes are rendered in messages. Inactive conversations with new messages are marked in the sidebar, with mentions called out in a brighter color; opening the conversation clears the marker.
+- **Dark mode theme** — Choose the deeper Dark mode palette under **Settings → Themes & Appearance**.
 - **Quick user actions** — Click a member in the user list or a message author to message, WHOIS, send CTCP PING/VERSION, or send a notice.
+- **Photo sharing** — Upload a selected PNG, JPEG, WebP, or GIF to Imgur and share its link in the active conversation. Configure an Imgur Client-ID under **Settings → Themes & Appearance**.
 - **Clickable IRC activity** — Nicknames in join, part, quit, rename, WHOIS, notice, and connection activity entries open the same user-action dialog.
 - **Smart nickname completion** — Press Tab after typing the start of a nickname to complete the most recent matching chatter first.
 - **Custom scripts** — Configure automatic private-message replies, phrase-triggered replies, and channel-join messages. Rules can be limited to a channel, run only while you are marked away, and use per-sender/channel cooldowns. Up to three matching rules can reply to one event. Scripts are simple event rules, not arbitrary JavaScript.
@@ -55,7 +59,7 @@ The Windows installer will be created under `dist\`.
 ## 📥 Download and install the Windows app
 
 1. Open the [latest Harbor IRC release](https://github.com/Ackleine/harbor-irccleint/releases/latest).
-2. Under **Assets**, download `Harbor IRC Setup 1.0.0.exe` (or the installer attached to the newest release).
+2. Under **Assets**, download `Harbor-IRC-Setup-1.1.0.exe` (or the installer attached to the newest release).
 3. Open the downloaded `.exe` and follow the installer prompts. Windows may ask you to confirm running an app that is not signed by a trusted publisher.
 4. Launch **Harbor IRC** from the Start menu.
 5. Open **Settings → Connection**, enter your IRC server, TLS port, nickname, and any channels or authentication details, then choose **Connect securely**.
@@ -74,6 +78,7 @@ Enter commands in the chat box:
 | `/me action` | Send an action |
 | `/msg nick message` | Send a private message |
 | `/notice nick message` | Send a notice |
+| `/sysinfo` | Share your operating system, CPU, memory, and uptime in the active conversation |
 | `/away [message]` | Mark yourself away with an optional message; run `/away` again to clear it |
 | `/quit [reason]` | Disconnect with your configured quit message, or the supplied reason |
 | `/disconnect [reason]` | Same as `/quit` |
@@ -82,7 +87,7 @@ Enter commands in the chat box:
 
 ## 🔐 Security & privacy
 
-Harbor requires verified TLS and does not offer plaintext or certificate-bypass connections. Each server endpoint can optionally require SASL or NickServ authentication. Authentication passwords are not stored unless you opt in; saved credentials are encrypted with Electron safeStorage (Windows OS-backed encryption) and kept out of renderer settings. SASL PLAIN credentials are sent inside the verified TLS connection. NickServ authentication sends `IDENTIFY <password>` for the current nickname and waits for a service confirmation before auto-joining. The Electron renderer uses context isolation, sandboxing, and disabled Node.js integration; its preload exposes a small, validated IPC API. IRC lines are length-limited, remote messages are rendered as text, and links require an explicit click and are restricted to HTTP(S). Background images are stored in local IndexedDB and are never sent to the IRC server.
+Harbor requires verified TLS and does not offer plaintext or certificate-bypass connections. Each server endpoint can optionally require SASL or NickServ authentication. Authentication passwords are not stored unless you opt in; saved credentials are encrypted with Electron safeStorage (Windows OS-backed encryption) and kept out of renderer settings. SASL PLAIN credentials are sent inside the verified TLS connection. NickServ authentication sends `IDENTIFY <password>` for the current nickname and waits for a service confirmation before auto-joining. The Electron renderer uses context isolation, sandboxing, and disabled Node.js integration; its preload exposes a small, validated IPC API. IRC lines are length-limited, remote messages are rendered as text, and links require an explicit click and are restricted to HTTP(S). Background images are stored in local IndexedDB and are never sent to the IRC server. Photos are uploaded to Imgur only when explicitly selected for sharing; Harbor then sends the resulting link to the active IRC conversation.
 
 Custom scripts are saved with local Harbor settings and only perform the message actions provided by Harbor; they cannot run JavaScript or access files. Automatic replies have configurable cooldowns and can be restricted to your away status.
 

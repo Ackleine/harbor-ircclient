@@ -3,6 +3,8 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('harbor', Object.freeze({
   connect: options => ipcRenderer.invoke('irc:connect', options),
   connectionState: () => ipcRenderer.invoke('irc:connectionState'),
+  sysinfo: () => ipcRenderer.invoke('app:sysinfo'),
+  uploadImage: options => ipcRenderer.invoke('app:uploadImage', options),
   rememberAuthPassword: options => ipcRenderer.invoke('irc:rememberAuthPassword', options),
   disconnect: () => ipcRenderer.invoke('irc:disconnect'),
   quit: reason => ipcRenderer.invoke('irc:quit', reason),

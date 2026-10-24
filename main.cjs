@@ -1,9 +1,15 @@
-const { app, BrowserWindow, ipcMain, safeStorage, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, net: electronNet, protocol, safeStorage, shell } = require('electron');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
+const os = require('node:os');
 const tls = require('node:tls');
 const net = require('node:net');
 const path = require('node:path');
+const { pathToFileURL } = require('node:url');
+
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } }
+]);
 
 let mainWindow;
 let client;
@@ -63,6 +69,63 @@ function validSecret(value, label, maxLength = 400) {
     throw new Error(`Invalid ${label}.`);
   }
   return value;
+}
+
+function formatSystemInfo() {
+  const cpus = os.cpus();
+  if (!cpus.length || !cpus[0].model) throw new Error('System CPU information is unavailable.');
+  const totalMemory = os.totalmem();
+  const freeMemory = os.freemem();
+  const uptime = Math.floor(os.uptime());
+  const days = Math.floor(uptime / 86400);
+  const hours = Math.floor((uptime % 86400) / 3600);
+  const minutes = Math.floor((uptime % 3600) / 60);
+  const gibibytes = bytes => `${(bytes / 1024 ** 3).toFixed(1)} GiB`;
+  const uptimeText = days
+    ? `${days}d ${hours}h ${minutes}m`
+    : hours ? `${hours}h ${minutes}m` : `${minutes}m`;
+
+  return `SysInfo: OS: ${os.type()} ${os.release()} (${os.arch()}), CPU: ${cpus[0].model} (${cpus.length} cores), Memory: ${gibibytes(totalMemory - freeMemory)} / ${gibibytes(totalMemory)}, Uptime: ${uptimeText}`;
+}
+
+async function uploadImgurImage(options = {}) {
+  if (!options || typeof options !== 'object' || Array.isArray(options)) throw new Error('Invalid photo upload.');
+  const clientId = validText(options.clientId, 'Imgur Client-ID', 80);
+  if (!/^[a-f\d]{15}$/i.test(clientId)) throw new Error('Enter a valid 15-character Imgur Client-ID.');
+  const mimeType = options.mimeType;
+  const extensions = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' };
+  if (typeof mimeType !== 'string' || !Object.hasOwn(extensions, mimeType)) {
+    throw new Error('Choose a PNG, JPEG, WebP or GIF image.');
+  }
+  const image = options.image;
+  if (typeof image !== 'string' || image.length > Math.ceil(10 * 1024 * 1024 / 3) * 4 || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(image)) {
+    throw new Error('The selected photo is invalid or exceeds the 10 MB upload limit.');
+  }
+  const imageBuffer = Buffer.from(image, 'base64');
+  if (!imageBuffer.length || imageBuffer.length > 10 * 1024 * 1024 || imageBuffer.toString('base64') !== image) {
+    throw new Error('The selected photo is invalid or exceeds the 10 MB upload limit.');
+  }
+  const form = new FormData();
+  form.append('image', new Blob([imageBuffer], { type: mimeType }), `photo.${extensions[mimeType]}`);
+  const response = await electronNet.fetch('https://api.imgur.com/3/image', {
+    method: 'POST',
+    headers: { Authorization: `Client-ID ${clientId}` },
+    body: form,
+    redirect: 'error',
+    signal: AbortSignal.timeout(30000)
+  });
+  const result = await response.json();
+  if (!response.ok || result.success !== true) {
+    const message = typeof result.data?.error === 'string' ? result.data.error : `Imgur upload failed (HTTP ${response.status}).`;
+    throw new Error(message);
+  }
+  let link;
+  try { link = new URL(result.data.link); }
+  catch { throw new Error('Imgur returned an invalid photo link.'); }
+  if (link.protocol !== 'https:' || !/(^|\.)imgur\.com$/i.test(link.hostname) || link.username || link.password) {
+    throw new Error('Imgur returned an invalid photo link.');
+  }
+  return link.href;
 }
 
 function validChannel(value) {
@@ -263,7 +326,7 @@ function handleLine(rawLine) {
     if (!tryNextNick()) {
       failAuthentication('The server rejected the nickname and no available backup nickname remains.');
     }
-  } else if (client.authMethod === 'nickserv' && client.nickServSent &&
+  } else if (client.authMethod === 'nickserv' && client.nickServSent && !client.nickServAuthenticated &&
     (command === 'NOTICE' || command === 'PRIVMSG') && nick.toLowerCase() === 'nickserv') {
     if (/\bnot\s+(?:identified|logged in|recognized|authenticated)\b/i.test(text) ||
       /\b(?:invalid|incorrect|wrong)\s+password\b|\bpassword\s+(?:is\s+)?(?:invalid|incorrect|wrong)\b|\bnot registered\b|\bno such (?:nick|nickname)\b/i.test(text)) {
@@ -350,7 +413,10 @@ function handleLine(rawLine) {
         nick, command: ctcpReply[1].toUpperCase(), payload: ctcpReply[2] || '', direction: 'response'
       });
     } else {
-      emit('notice', { nick, text: noticeText });
+      emit('notice', {
+        nick, text: noticeText,
+        private: params[0].toLowerCase() === client.nick.toLowerCase()
+      });
     }
   } else if (command === 'TOPIC' && params.length >= 2) {
     emit('topic', { channel: params[0], topic: params.slice(1).join(' ') });
@@ -510,15 +576,17 @@ function makeWindow() {
   });
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   mainWindow.webContents.on('will-navigate', (event, url) => {
-    const allowed = app.isPackaged ? url.startsWith('file:') : url.startsWith('http://127.0.0.1:5173/');
+    const allowed = app.isPackaged ? url.startsWith('app://harbor/') : url.startsWith('http://127.0.0.1:5173/');
     if (!allowed) event.preventDefault();
   });
-  if (app.isPackaged) mainWindow.loadFile(path.join(__dirname, 'dist', 'index.html'));
+  if (app.isPackaged) mainWindow.loadURL('app://harbor/index.html');
   else mainWindow.loadURL('http://127.0.0.1:5173');
   mainWindow.on('closed', () => { mainWindow = undefined; });
 }
 
 ipcMain.handle('irc:connect', (_event, options) => connect(options));
+ipcMain.handle('app:sysinfo', () => formatSystemInfo());
+ipcMain.handle('app:uploadImage', (_event, options) => uploadImgurImage(options));
 ipcMain.handle('irc:connectionState', () => {
   if (!client) return { status: 'offline' };
   return {
@@ -566,7 +634,7 @@ ipcMain.handle('irc:message', (_event, target, text, action = false) => {
   if (!/^[#&+!A-Za-z0-9_\-\[\]\\`^{|}]+$/.test(safeTarget)) throw new Error('Invalid message target.');
   const safeText = validText(text, 'message', 400);
   sendRaw(`PRIVMSG ${safeTarget} :${action ? `\u0001ACTION ${safeText}\u0001` : safeText}`);
-  emit('message', { target: safeTarget, nick: client.nick, text: safeText, action, private: false, self: true });
+  emit('message', { target: safeTarget, nick: client.nick, text: safeText, action, private: !/^[#&+!]/.test(safeTarget), self: true });
 });
 ipcMain.handle('irc:notice', (_event, target, text) => {
   const safeTarget = validText(target, 'message target', 200);
@@ -597,6 +665,17 @@ ipcMain.handle('app:openExternal', async (_event, value) => {
 });
 
 app.whenReady().then(() => {
+  if (app.isPackaged) {
+    protocol.handle('app', request => {
+      const url = new URL(request.url);
+      const distDirectory = path.resolve(__dirname, 'dist');
+      const filePath = path.resolve(distDirectory, decodeURIComponent(url.pathname.slice(1)));
+      if (url.hostname !== 'harbor' || filePath === distDirectory || !filePath.startsWith(`${distDirectory}${path.sep}`)) {
+        return new Response('Not found', { status: 404 });
+      }
+      return electronNet.fetch(pathToFileURL(filePath).href);
+    });
+  }
   makeWindow();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) makeWindow(); });
 });

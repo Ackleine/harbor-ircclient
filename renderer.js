@@ -7,12 +7,13 @@ const defaults = {
   host: 'irc.libera.chat', port: '6697', nick: 'HarborGuest', username: '', channels: '#libera',
   backupNicks: '', authMethod: 'none', authAccount: '', rememberAuthPassword: false,
   requireAuthentication: false, requireAuthenticationByServer: {},
-  quitMessage: '{nick} has quit their Harbor client', customScripts: [], awayMessage: 'Away'
+  quitMessage: '{nick} has quit their Harbor client', customScripts: [], awayMessage: 'Away', imgurClientId: ''
 };
 const stored = loadSettings();
 const state = {
-  connected: false, connecting: false, away: false, scriptCooldowns: new Map(), server: '', nick: stored.nick || defaults.nick,
-  active: '', channels: [], users: new Map(), memberModes: new Map(), conversations: new Map(), recentTalkers: new Map(),
+  connected: false, connecting: false, away: false, uploadingPhoto: false, scriptCooldowns: new Map(), server: '', nick: stored.nick || defaults.nick,
+  active: '', channels: [], privateMessages: [], users: new Map(), memberModes: new Map(), conversations: new Map(), recentTalkers: new Map(),
+  unreadConversations: new Set(), unreadMentions: new Set(),
   settings: { ...defaults, ...stored, customScripts: normalizeCustomScripts(stored.customScripts), password: '', authPassword: '' }, settingsOpen: false, settingsTab: 'appearance',
   imageUrl: '', imageObjectUrl: ''
 };
@@ -32,11 +33,13 @@ root.innerHTML = `
       <div class="section-label"><span>SERVER</span></div><button class="channel-item connection-item" id="connection-view" type="button"><span class="channel-item-hash">↔</span><span class="channel-item-name">Connection log</span></button>
       <div class="section-label"><span>CHANNELS</span></div>
       <div class="channel-list" id="channel-list"></div>
+      <div class="section-label private-section-label" id="private-section-label"><span>DIRECT MESSAGES</span></div>
+      <div class="private-message-list" id="private-message-list"></div>
       <div class="sidebar-footer"><span class="footer-dot"></span><span>Messages stay on your device</span></div>
     </aside>
     <main class="chat-area">
       <header class="chat-header"><div class="chat-title"><span class="channel-hash" id="channel-symbol">#</span><div><h2 id="active-title">Welcome</h2><p id="active-topic">Connect to an IRC network to begin chatting.</p></div></div><div class="header-actions"><span class="connection-pill" id="connection-pill"><i></i> Offline</span><button class="icon-button" id="leave-channel" title="Leave channel" aria-label="Leave channel"><span class="icon icon-exit"></span></button><button class="icon-button" id="open-settings" title="Settings" aria-label="Settings"><span class="icon icon-settings"></span></button></div></header>
-      <div class="conversation-layout"><section class="conversation"><div class="message-list" id="message-list" aria-live="polite"><div class="welcome-state"><div class="welcome-glyph">H</div><div class="eyebrow">YOUR IRC DESKTOP</div><h3>A quieter place to chat.</h3><p>Connect to a network, join a channel, and pick up the conversation.</p><button class="primary-button" id="welcome-connect"><span class="icon icon-plug"></span> Connect to a server</button></div></div><div class="composer-wrap"><div class="emoji-picker hidden" id="emoji-picker" role="group" aria-label="Emoji picker"></div><form class="composer" id="message-form"><button type="button" class="composer-plus" id="composer-join" title="Join a channel" aria-label="Join a channel"><span class="icon icon-plus"></span></button><button type="button" class="emoji-button" id="emoji-button" title="Insert emoji" aria-label="Insert emoji">😊</button><label class="composer-input-label" for="message-input"><span class="sr-only">Message</span></label><input id="message-input" autocomplete="off" maxlength="400" placeholder="Connect to start chatting" disabled /><button class="send-button" type="submit" title="Send message" aria-label="Send message" disabled><span class="icon icon-send"></span></button></form><div class="composer-hint"><span>Enter to send</span><span>IRC commands begin with <kbd>/</kbd></span></div></div></section><aside class="member-panel"><div class="member-heading"><span>MEMBERS</span><span class="member-count" id="member-count">0</span></div><div class="member-list" id="member-list"><span class="empty-members">Join a channel to see who's here.</span></div><div class="member-footer"><span class="lock-mark"></span><span>TLS connection</span></div></aside></div>
+      <div class="conversation-layout"><section class="conversation"><div class="message-list" id="message-list" aria-live="polite"><div class="welcome-state"><div class="welcome-glyph">H</div><div class="eyebrow">YOUR IRC DESKTOP</div><h3>A quieter place to chat.</h3><p>Connect to a network, join a channel, and pick up the conversation.</p><button class="primary-button" id="welcome-connect"><span class="icon icon-plug"></span> Connect to a server</button></div></div><div class="composer-wrap"><div class="emoji-picker hidden" id="emoji-picker" role="group" aria-label="Emoji picker"></div><form class="composer" id="message-form"><button type="button" class="composer-plus" id="composer-join" title="Join a channel" aria-label="Join a channel"><span class="icon icon-plus"></span></button><button type="button" class="composer-plus" id="photo-upload" title="Upload a photo to Imgur" aria-label="Upload a photo"><span class="icon icon-image"></span></button><button type="button" class="emoji-button" id="emoji-button" title="Insert emoji" aria-label="Insert emoji">😊</button><label class="composer-input-label" for="message-input"><span class="sr-only">Message</span></label><input id="message-input" autocomplete="off" maxlength="400" placeholder="Connect to start chatting" disabled /><button class="send-button" type="submit" title="Send message" aria-label="Send message" disabled><span class="icon icon-send"></span></button></form><div class="composer-hint"><span>Enter to send</span><span>IRC commands begin with <kbd>/</kbd></span></div></div></section><aside class="member-panel"><div class="member-heading"><span>MEMBERS</span><span class="member-count" id="member-count">0</span></div><div class="member-list" id="member-list"><span class="empty-members">Join a channel to see who's here.</span></div><div class="member-footer"><span class="lock-mark"></span><span>TLS connection</span></div></aside></div>
     </main>
   </div>
   <div class="toast-stack" id="toast-stack" role="status" aria-live="polite"></div>
@@ -51,6 +54,11 @@ imageInput.type = 'file';
 imageInput.accept = 'image/png,image/jpeg,image/webp,image/gif';
 imageInput.hidden = true;
 document.body.append(imageInput);
+const photoInput = document.createElement('input');
+photoInput.type = 'file';
+photoInput.accept = 'image/png,image/jpeg,image/webp,image/gif';
+photoInput.hidden = true;
+document.body.append(photoInput);
 
 function loadSettings() {
   try {
@@ -218,12 +226,13 @@ function renderSettings() {
     const colors = appearanceColors();
     content.innerHTML = `
       <div class="settings-section"><span class="eyebrow">PERSONALIZE</span><h3>Theme &amp; appearance</h3><p class="section-description">Choose a Harbor theme, then customize nickname colors and window surfaces. Preferences stay on this device.</p>
-      <label class="field-label" for="color-scheme">Theme</label><select class="text-field" id="color-scheme"><option value="harbor">Harbor green</option><option value="midnight">Midnight blue</option><option value="violet">Violet dusk</option><option value="ember">Ember</option><option value="custom">Custom</option></select>
+      <label class="field-label" for="color-scheme">Theme</label><select class="text-field" id="color-scheme"><option value="harbor">Harbor green</option><option value="midnight">Midnight blue</option><option value="violet">Violet dusk</option><option value="ember">Ember</option><option value="dark">Dark mode</option><option value="custom">Custom</option></select>
       <div class="field-row"><div><label class="field-label" for="chat-window-color">Chat window</label><div class="color-control"><input id="chat-window-color" type="color" value="${escapeAttribute(colors.chat)}" /><span>${escapeHtml(colors.chat.toUpperCase())}</span></div></div><div><label class="field-label" for="panel-window-color">Panel windows</label><div class="color-control"><input id="panel-window-color" type="color" value="${escapeAttribute(colors.panel)}" /><span>${escapeHtml(colors.panel.toUpperCase())}</span></div></div></div>
       <label class="field-label">Nickname color palette</label><div class="nick-color-controls">${colors.nicks.map((color, index) => `<label class="color-control" aria-label="Nickname color ${index + 1}"><input type="color" data-nick-color="${index}" value="${escapeAttribute(color)}" /><span>${escapeHtml(color.toUpperCase())}</span></label>`).join('')}</div>
       <div class="range-label"><label class="field-label" for="image-dim">Image dimming</label><span id="dim-value">${escapeHtml(localStorage.getItem('harbor-dim') || '42')}%</span></div><input class="range-control" id="image-dim" type="range" min="0" max="85" value="${escapeAttribute(localStorage.getItem('harbor-dim') || '42')}" />
       <div class="image-picker"><div class="image-picker-copy"><strong>Background image</strong><span>PNG, JPEG, WebP or GIF · up to 4 MB</span></div><button type="button" class="secondary-button" id="choose-image"><span class="icon icon-image"></span> Choose image</button></div>
       <button type="button" class="text-button remove-image" id="remove-image">Remove background image</button>
+      <div class="photo-upload-settings"><label class="field-label" for="imgur-client-id">Imgur Client-ID</label><input class="text-field" id="imgur-client-id" maxlength="80" autocomplete="off" value="${escapeAttribute(state.settings.imgurClientId || '')}" /><p class="section-description">Required to upload photos. Imgur Client-IDs are public app identifiers. Photos are uploaded to Imgur only when you choose to share one.</p><button type="button" class="secondary-button" id="save-imgur-client-id">Save Client-ID</button></div>
       <button type="button" class="text-button" id="reset-appearance">Reset color scheme and custom colors</button>
       <div class="appearance-preview" id="appearance-preview"><span>CHAT PREVIEW</span><div><b>alex</b> &nbsp;Looks good in here.</div></div>
       </div>`;
@@ -247,6 +256,16 @@ function renderSettings() {
     $('#image-dim').addEventListener('input', event => setDim(event.target.value));
     $('#choose-image').addEventListener('click', () => imageInput.click());
     $('#remove-image').addEventListener('click', clearBackgroundImage);
+    $('#save-imgur-client-id').addEventListener('click', () => {
+      const clientId = $('#imgur-client-id').value.trim();
+      if (clientId && !/^[a-f\d]{15}$/i.test(clientId)) {
+        toast('Enter a valid 15-character Imgur Client-ID.', 'error');
+        return;
+      }
+      state.settings.imgurClientId = clientId;
+      saveSettings();
+      toast(clientId ? 'Imgur Client-ID saved.' : 'Imgur Client-ID removed.');
+    });
     updatePreview();
   }
 }
@@ -279,7 +298,8 @@ const colorSchemes = {
   harbor: { canvas: '#151a18', panel: '#1d2421', raised: '#242c28', line: '#303a34', mint: '#a9d4b9', lime: '#d4e5a4', chat: '#141918', nicks: ['#8dd7b5', '#71b8df', '#e7bd70', '#d898cf'] },
   midnight: { canvas: '#111722', panel: '#192231', raised: '#222f41', line: '#34445a', mint: '#8ec5ff', lime: '#a8d8ff', chat: '#111925', nicks: ['#78c8f0', '#a6a2ff', '#77d6ba', '#f1bd76'] },
   violet: { canvas: '#191522', panel: '#241d30', raised: '#30263e', line: '#463753', mint: '#d0a8f0', lime: '#e2c1fa', chat: '#181320', nicks: ['#d4a1f5', '#83c6ee', '#e8a0b9', '#b7d78a'] },
-  ember: { canvas: '#1c1715', panel: '#29201c', raised: '#382a23', line: '#4b3930', mint: '#edb58b', lime: '#f0d08e', chat: '#191412', nicks: ['#f0a26e', '#e8cf78', '#e8899a', '#91c7a4'] }
+  ember: { canvas: '#1c1715', panel: '#29201c', raised: '#382a23', line: '#4b3930', mint: '#edb58b', lime: '#f0d08e', chat: '#191412', nicks: ['#f0a26e', '#e8cf78', '#e8899a', '#91c7a4'] },
+  dark: { canvas: '#090b0a', panel: '#111412', raised: '#191d1a', line: '#292e2a', mint: '#a9d4b9', lime: '#d4e5a4', chat: '#080a09', nicks: ['#8dd7b5', '#71b8df', '#e7bd70', '#d898cf'] }
 };
 function getAppearance() {
   try {
@@ -438,13 +458,86 @@ imageInput.addEventListener('change', async () => {
   } catch (error) { toast(error.message || 'The image could not be opened.', 'error'); }
 });
 
-function addConversation(target, { timestamp = new Date(), nick = '', text, kind = 'message', action = false, self = false, numeric = '', actorNicks = [] } = {}) {
+async function choosePhoto() {
+  if (!state.connected) {
+    toast('Connect to an IRC server before uploading a photo.');
+    openSettings('connection');
+    return;
+  }
+  if (!state.active || state.active === connectionView) {
+    toast('Select a channel or direct message before uploading a photo.');
+    return;
+  }
+  if (!state.settings.imgurClientId) {
+    toast('Add your Imgur Client-ID in Settings → Themes & Appearance.');
+    openSettings('appearance');
+    return;
+  }
+  photoInput.click();
+}
+photoInput.addEventListener('change', async () => {
+  const file = photoInput.files?.[0];
+  photoInput.value = '';
+  if (!file) return;
+  if (!['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.type) || file.size > 10 * 1024 * 1024) {
+    toast('Choose a PNG, JPEG, WebP or GIF image under 10 MB.', 'error');
+    return;
+  }
+  const target = state.active;
+  if (!state.connected || !target || target === connectionView) {
+    toast('Select a connected channel or direct message before uploading a photo.', 'error');
+    return;
+  }
+  state.uploadingPhoto = true;
+  updatePhotoButton();
+  let link;
+  try {
+    const dataUrl = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.addEventListener('load', () => resolve(reader.result));
+      reader.addEventListener('error', () => reject(reader.error || new Error('The selected photo could not be read.')));
+      reader.readAsDataURL(file);
+    });
+    if (typeof dataUrl !== 'string' || !dataUrl.startsWith(`data:${file.type};base64,`)) {
+      throw new Error('The selected photo could not be encoded.');
+    }
+    const image = dataUrl.slice(dataUrl.indexOf(',') + 1);
+    link = await window.harbor.uploadImage({
+      clientId: state.settings.imgurClientId,
+      mimeType: file.type,
+      image
+    });
+  } catch (error) {
+    toast(error.message || 'Photo upload failed.', 'error');
+    state.uploadingPhoto = false;
+    updatePhotoButton();
+    return;
+  }
+  try {
+    await window.harbor.message(target, link, false);
+    toast(`Photo uploaded and shared in ${target}.`);
+  } catch (error) {
+    toast(`Photo uploaded, but its link could not be sent: ${link} (${error.message || 'Unknown error.'})`, 'error');
+  } finally {
+    state.uploadingPhoto = false;
+    updatePhotoButton();
+  }
+});
+
+function addConversation(target, { timestamp = new Date(), nick = '', text, kind = 'message', action = false, self = false, mention = false, numeric = '', actorNicks = [] } = {}) {
   if ((!target && kind !== 'system') || typeof text !== 'string') return;
   if (!state.conversations.has(target)) state.conversations.set(target, []);
   const messages = state.conversations.get(target);
-  messages.push({ timestamp, nick, text, kind, action, self, numeric, actorNicks });
+  messages.push({ timestamp, nick, text, kind, action, self, mention, numeric, actorNicks });
   if (messages.length > 600) messages.splice(0, messages.length - 600);
-  if (state.active === target) renderMessages();
+  if (sameConversation(state.active, target)) renderMessages();
+  renderChannels();
+}
+function sameConversation(left, right) {
+  return typeof left === 'string' && typeof right === 'string' && left.toLowerCase() === right.toLowerCase();
+}
+function conversationKey(target) {
+  return target.toLowerCase();
 }
 function noteRecentTalker(target, nick) {
   if (!target || !nick || nick.toLowerCase() === state.nick.toLowerCase()) return;
@@ -491,12 +584,17 @@ function completeNickname(input) {
   tabCompletion.lastValue = input.value;
   tabCompletion.lastCursor = input.selectionStart;
 }
+function mentionsCurrentNick(text) {
+  if (!text || !state.nick) return false;
+  const nickCharacters = 'A-Za-z0-9_\\-\\[\\]\\\\`^{}|';
+  const escapedNick = state.nick.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(^|[^${nickCharacters}])${escapedNick}(?=$|[^${nickCharacters}])`, 'i').test(text);
+}
 function renderMessages() {
   messageList.replaceChildren();
   const messages = state.conversations.get(state.active) || [];
   if (!state.active && !state.connected && !messages.length) {
     messageList.innerHTML = '<div class="welcome-state"><div class="welcome-glyph">H</div><div class="eyebrow">YOUR IRC DESKTOP</div><h3>A quieter place to chat.</h3><p>Connect to a network, join a channel, and pick up the conversation.</p><button class="primary-button" id="welcome-connect"><span class="icon icon-plug"></span> Connect to a server</button></div>';
-    $('#welcome-connect').addEventListener('click', () => openSettings('connection'));
     return;
   }
   if (!messages.length) {
@@ -512,7 +610,8 @@ function renderMessages() {
   }
   for (const message of messages) {
     const row = document.createElement('article');
-    row.className = `message-row ${message.kind}${message.self ? ' self' : ''}`;
+    const isPrivateMessage = Boolean(state.active && state.active !== connectionView && !isChannelTarget(state.active));
+    row.className = `message-row ${message.kind}${message.self ? ' self' : ''}${isPrivateMessage ? ' direct-message-row' : ''}${message.mention ? ' mention' : ''}`;
     const time = document.createElement('time');
     time.textContent = message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     row.append(time);
@@ -647,8 +746,45 @@ function toggleUserActionMenu(trigger, menu) {
   }
   trigger.setAttribute('aria-expanded', String(open));
 }
+const ircColors = [
+  '#ffffff', '#000000', '#00007f', '#009300', '#ff0000', '#7f0000', '#9c009c', '#fc7f00',
+  '#ffff00', '#00fc00', '#009393', '#00ffff', '#0000fc', '#ff00ff', '#7f7f7f', '#d2d2d2'
+];
 function appendSafeText(container, text) {
-  text = text.replace(/\x03(?:\d{1,2}(?:,\d{1,2})?)?|\x04(?:[0-9a-f]{6}(?:,[0-9a-f]{6})?)?|[\x02\x0f\x11\x16\x1d\x1e\x1f]/gi, '');
+  let foreground = '';
+  let background = '';
+  const formatPattern = /\x03(\d{1,2})?(?:,(\d{1,2}))?|\x04([0-9a-f]{6})(?:,([0-9a-f]{6}))?|[\x02\x0f\x11\x16\x1d\x1e\x1f]/gi;
+  let cursor = 0;
+  for (const match of text.matchAll(formatPattern)) {
+    appendFormattedSegment(container, text.slice(cursor, match.index), foreground, background);
+    if (match[0][0] === '\x03') {
+      foreground = match[1] === undefined ? '' : ircColors[Number(match[1])] || '';
+      background = match[2] === undefined ? '' : ircColors[Number(match[2])] || '';
+    } else if (match[0][0] === '\x04') {
+      foreground = match[3] ? `#${match[3]}` : '';
+      background = match[4] ? `#${match[4]}` : '';
+    } else if (match[0] === '\x0f') {
+      foreground = '';
+      background = '';
+    }
+    cursor = match.index + match[0].length;
+  }
+  appendFormattedSegment(container, text.slice(cursor), foreground, background);
+}
+function appendFormattedSegment(container, text, foreground, background) {
+  if (!text) return;
+  if (foreground || background) {
+    const span = document.createElement('span');
+    span.className = 'irc-colored-text';
+    if (foreground) span.style.color = foreground;
+    if (background) span.style.backgroundColor = background;
+    appendMessageLinks(span, text);
+    container.append(span);
+    return;
+  }
+  appendMessageLinks(container, text);
+}
+function appendMessageLinks(container, text) {
   const linkPattern = /https?:\/\/[^\s<>]+/gi;
   let cursor = 0;
   for (const match of text.matchAll(linkPattern)) {
@@ -702,11 +838,19 @@ function appendWhoisText(container, text) {
 }
 function selectConversation(target) {
   state.active = target;
+  state.unreadConversations.delete(conversationKey(target));
+  state.unreadMentions.delete(conversationKey(target));
+  updatePhotoButton();
   $('#active-title').textContent = target === connectionView ? 'Connection' : target || (state.connected ? state.server : 'Welcome');
-  $('#channel-symbol').textContent = target === connectionView ? '↔' : target.startsWith('#') ? '#' : target ? '@' : '';
+  const isPrivateMessage = Boolean(target && target !== connectionView && !isChannelTarget(target));
+  $('#channel-symbol').textContent = target === connectionView ? '↔' : target ? isPrivateMessage ? '✉' : target[0] : '';
+  $('#channel-symbol').classList.toggle('direct-message-symbol', isPrivateMessage);
+  $('.chat-area').classList.toggle('direct-message', isPrivateMessage);
   $('#active-topic').textContent = target === connectionView
     ? `Server replies and CTCP activity${state.server ? ` · ${state.server}` : ''}`
-    : target ? (state.connected ? `Conversation on ${state.server}` : 'Not connected')
+    : target ? (isPrivateMessage
+      ? `Direct message${state.connected ? ` · ${state.server}` : ''}`
+      : (state.connected ? `Channel on ${state.server}` : 'Not connected'))
       : state.connected ? `Connected securely as ${state.nick}. Join a channel to start chatting.` : 'Connect to an IRC network to begin chatting.';
   $('#message-input').placeholder = target === connectionView
     ? 'Connection log · use /join #channel to join'
@@ -720,10 +864,15 @@ function renderChannels() {
   list.replaceChildren();
   for (const channel of state.channels) {
     const button = document.createElement('button');
-    button.className = `channel-item${channel === state.active ? ' active' : ''}`;
+    const unread = state.unreadConversations.has(conversationKey(channel));
+    const mentioned = state.unreadMentions.has(conversationKey(channel));
+    button.className = `channel-item${sameConversation(channel, state.active) ? ' active' : ''}${unread ? ' unread' : ''}${mentioned ? ' mentioned' : ''}`;
     button.type = 'button';
-    button.innerHTML = '<span class="channel-item-hash">#</span><span class="channel-item-name"></span><span class="channel-unread"></span>';
+    button.innerHTML = '<span class="channel-item-hash"></span><span class="channel-item-name"></span><span class="channel-unread"></span>';
+    button.querySelector('.channel-item-hash').textContent = channel[0];
     button.querySelector('.channel-item-name').textContent = channel.replace(/^[#&+!]/, '');
+    if (unread) button.title = mentioned ? `New message mentioning ${state.nick}` : 'New messages';
+    if (unread) button.setAttribute('aria-label', `${channel}${mentioned ? ', new mention' : ', new messages'}`);
     button.addEventListener('click', () => selectConversation(channel));
     list.append(button);
   }
@@ -734,17 +883,42 @@ function renderChannels() {
     list.append(empty);
   }
   $('#connection-view').classList.toggle('active', state.active === connectionView);
+  const privateList = $('#private-message-list');
+  privateList.replaceChildren();
+  for (const nick of state.privateMessages) {
+    const button = document.createElement('button');
+    const unread = state.unreadConversations.has(conversationKey(nick));
+    const mentioned = state.unreadMentions.has(conversationKey(nick));
+    button.className = `channel-item private-message-item${sameConversation(nick, state.active) ? ' active' : ''}${unread ? ' unread' : ''}${mentioned ? ' mentioned' : ''}`;
+    button.type = 'button';
+    button.innerHTML = '<span class="channel-item-hash">✉</span><span class="channel-item-name"></span><span class="channel-unread"></span>';
+    button.querySelector('.channel-item-name').textContent = nick;
+    if (unread) button.title = mentioned ? `New message mentioning ${state.nick}` : 'New messages';
+    if (unread) button.setAttribute('aria-label', `${nick}${mentioned ? ', new mention' : ', new messages'}`);
+    button.addEventListener('click', () => selectConversation(nick));
+    privateList.append(button);
+  }
+  $('#private-section-label').hidden = state.privateMessages.length === 0;
+  privateList.hidden = state.privateMessages.length === 0;
+}
+function isChannelTarget(target) {
+  return /^[#&+!]/.test(target);
 }
 function renderMembers() {
   const names = state.users.get(state.active) || [];
   const modes = state.memberModes.get(state.active) || new Map();
+  const isPrivateMessage = Boolean(state.active && state.active !== connectionView && !isChannelTarget(state.active));
+  $('.member-heading > span:first-child').textContent = isPrivateMessage ? 'DIRECT MESSAGE' : 'MEMBERS';
+  $('#member-count').hidden = isPrivateMessage;
   $('#member-count').textContent = String(names.length);
   const list = $('#member-list');
   list.replaceChildren();
   if (!names.length) {
     const empty = document.createElement('span');
     empty.className = 'empty-members';
-    empty.textContent = state.active === connectionView
+    empty.textContent = isPrivateMessage
+      ? `Private conversation with ${state.active}.`
+      : state.active === connectionView
       ? 'Server and CTCP activity is shown in the connection log.'
       : 'Join a channel to see who’s here.';
     list.append(empty);
@@ -820,8 +994,9 @@ async function runMemberAction(action, nick) {
   closeUserActionMenus();
   try {
     if (action === 'message') {
-      if (!state.channels.includes(nick)) state.channels.push(nick);
-      if (!state.users.has(nick)) state.users.set(nick, []);
+      if (!state.privateMessages.some(name => name.toLowerCase() === nick.toLowerCase())) {
+        state.privateMessages.push(nick);
+      }
       selectConversation(nick);
       $('#message-input').focus();
     } else if (action === 'whois') {
@@ -861,9 +1036,14 @@ function setConnectionStatus(status, detail = '') {
   $('#message-form button[type="submit"]').disabled = !state.connected;
   $('#emoji-button').disabled = !state.connected;
   $('#leave-channel').disabled = !state.connected || !state.active || !state.active.startsWith('#');
+  updatePhotoButton();
   if (state.settingsOpen && state.settingsTab === 'connection') renderSettings();
   renderChannels();
   renderMessages();
+}
+function updatePhotoButton() {
+  const button = $('#photo-upload');
+  if (button) button.disabled = state.uploadingPhoto;
 }
 async function connectFromForm(event) {
   event.preventDefault();
@@ -879,6 +1059,7 @@ async function connectFromForm(event) {
     rememberAuthPassword: form.get('rememberAuthPassword') === 'on',
     requireAuthentication: form.get('requireAuthentication') === 'on',
     requireAuthenticationByServer: state.settings.requireAuthenticationByServer || {},
+    imgurClientId: state.settings.imgurClientId || '',
     quitMessage: String(form.get('quitMessage') || '').trim() || defaults.quitMessage
   };
   const requiredByServer = { ...(state.settings.requireAuthenticationByServer || {}) };
@@ -986,14 +1167,21 @@ async function submitMessage(event) {
         const body = args.slice(1).join(' ');
         if (!target || !body) throw new Error('Usage: /msg nickname message');
         await window.harbor.message(target, body, false);
-        if (!state.channels.includes(target)) state.channels.push(target);
+        if (isChannelTarget(target)) {
+          if (!state.channels.includes(target)) state.channels.push(target);
+        } else if (!state.privateMessages.some(nick => nick.toLowerCase() === target.toLowerCase())) {
+          state.privateMessages.push(target);
+        }
         selectConversation(target);
       } else if (command.toLowerCase() === 'clear') {
         if (!state.active) throw new Error('Select a conversation before clearing it.');
         state.conversations.set(state.active, []);
         renderMessages();
+      } else if (command.toLowerCase() === 'sysinfo') {
+        if (!state.active || state.active === connectionView) throw new Error('Select a channel or direct message before sending system information.');
+        await window.harbor.message(state.active, await window.harbor.sysinfo(), false);
       } else if (command.toLowerCase() === 'help') {
-        addConversation(state.active, { kind: 'system', text: 'Commands: /join #channel · /part [#channel] · /nick name · /away [message] · /me action · /msg nick message · /notice nick message · /quit [reason] · /disconnect [reason] · /clear. Join a channel before sending a regular message.' });
+        addConversation(state.active, { kind: 'system', text: 'Commands: /join #channel · /part [#channel] · /nick name · /away [message] · /me action · /msg nick message · /notice nick message · /sysinfo · /quit [reason] · /disconnect [reason] · /clear. Select a channel or direct message before sending a regular message.' });
       } else await window.harbor.rawCommand(`${command} ${rest}`.trim());
     } catch (error) { toast(error.message || 'Command failed.', 'error'); }
     return;
@@ -1079,8 +1267,13 @@ window.harbor.onEvent(event => {
     addConversation(connectionView, { kind: 'system', text: `Connection error: ${message}` });
   }
   else if (event.type === 'message') {
-    const target = event.private ? event.nick : event.target;
+    const target = event.private && !event.self ? event.nick : event.target;
     if (!target) return;
+    const mention = !event.self && mentionsCurrentNick(String(event.text || ''));
+    if (!event.self && !sameConversation(state.active, target)) {
+      state.unreadConversations.add(conversationKey(target));
+      if (mention) state.unreadMentions.add(conversationKey(target));
+    }
     if (!event.self) {
       void runCustomScripts({
         type: 'message', nick: event.nick || '', target,
@@ -1090,9 +1283,25 @@ window.harbor.onEvent(event => {
       });
     }
     if (!event.private) noteRecentTalker(target, event.nick);
-    if (!state.channels.includes(target)) { state.channels.push(target); state.users.set(target, []); renderChannels(); }
-    addConversation(target, { nick: event.nick || 'server', text: event.text, action: event.action, self: event.self });
+    if (event.private) {
+      if (!state.privateMessages.some(nick => nick.toLowerCase() === target.toLowerCase())) {
+        state.privateMessages.push(target);
+        renderChannels();
+      }
+    } else if (!state.channels.includes(target)) {
+      state.channels.push(target);
+      state.users.set(target, []);
+      renderChannels();
+    }
+    addConversation(target, { nick: event.nick || 'server', text: event.text, action: event.action, self: event.self, mention });
     if (event.self && state.active !== target) selectConversation(target);
+  } else if (event.type === 'notice' && event.private && event.nick) {
+    const target = event.nick;
+    if (!state.privateMessages.some(nick => nick.toLowerCase() === target.toLowerCase())) {
+      state.privateMessages.push(target);
+    }
+    renderChannels();
+    addConversation(target, { nick: event.nick, text: event.text, kind: 'notice' });
   } else if (event.type === 'notice' || event.type === 'server') {
     const whoisReply = event.type === 'server' && ['301', '311', '312', '313', '317', '318', '319', '330', '338', '340', '378', '379', '671'].includes(event.numeric);
     const whoisNick = whoisReply
@@ -1114,7 +1323,7 @@ window.harbor.onEvent(event => {
       text: event.direction === 'sent'
         ? `${direction} ${event.command} to ${event.target}${payload}.`
         : `${direction} ${event.nick}: ${event.command}${payload}.`,
-      actorNicks: [event.nick]
+      actorNicks: [event.direction === 'sent' ? event.target : event.nick]
     });
   } else if (event.type === 'names') {
     const names = state.users.get(event.channel) || [];
@@ -1215,11 +1424,15 @@ $('#rail-connect').addEventListener('click', () => openSettings('connection'));
 $('#open-settings').addEventListener('click', () => openSettings('appearance'));
 $('#server-menu').addEventListener('click', () => openSettings('connection'));
 $('#connection-view').addEventListener('click', () => selectConversation(connectionView));
+root.addEventListener('click', event => {
+  if (event.target instanceof Element && event.target.closest('#welcome-connect')) openSettings('connection');
+});
 $('#close-settings').addEventListener('click', closeSettings);
 $('#modal-backdrop').addEventListener('click', event => { if (event.target === $('#modal-backdrop')) closeSettings(); });
 $('#modal-backdrop').addEventListener('keydown', event => { if (event.key === 'Escape') closeSettings(); });
 $$('.settings-nav-item').forEach(button => button.addEventListener('click', () => { state.settingsTab = button.dataset.tab; renderSettings(); }));
 $('#composer-join').addEventListener('click', promptJoin);
+$('#photo-upload').addEventListener('click', choosePhoto);
 $('#message-form').addEventListener('submit', submitMessage);
 const emojiPicker = $('#emoji-picker');
 for (const emoji of emojiChoices) {
