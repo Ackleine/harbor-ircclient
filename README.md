@@ -59,7 +59,7 @@ The Windows installer will be created under `dist\`.
 ## 📥 Download and install the Windows app
 
 1. Open the [latest Harbor IRC release](https://github.com/Ackleine/harbor-irccleint/releases/latest).
-2. Under **Assets**, download `Harbor-IRC-Setup-1.1.0.exe` (or the installer attached to the newest release).
+2. Under **Assets**, download `Harbor-IRC-Setup-1.2.0.exe` (or the installer attached to the newest release).
 3. Open the downloaded `.exe` and follow the installer prompts. Windows may ask you to confirm running an app that is not signed by a trusted publisher.
 4. Launch **Harbor IRC** from the Start menu.
 5. Open **Settings → Connection**, enter your IRC server, TLS port, nickname, and any channels or authentication details, then choose **Connect securely**.

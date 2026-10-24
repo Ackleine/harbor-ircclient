@@ -1,6 +1,6 @@
 {
   "name": "harbor-irc",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "A secure-by-default desktop IRC client",
   "private": true,
   "type": "module",
